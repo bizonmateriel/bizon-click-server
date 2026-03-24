@@ -1,0 +1,2 @@
+http://localhost:3000/occasion?pid=123&rs=TEST%20BIZON&c=CAMPAGNE1&cp=83000&ape=4399C&g=1
+http://localhost:3000/recontact?pid=123&rs=TEST%20BIZON&c=CAMPAGNE1&cp=83000&ape=4399C&g=1
