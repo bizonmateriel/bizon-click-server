@@ -14,11 +14,8 @@ const SENDER_EMAIL =
   process.env.SENDER_EMAIL || ALERT_EMAIL || "no-reply@example.com";
 const SENDER_NAME = process.env.SENDER_NAME || "Bizon Matériel";
 
-/*
-  👉 Remplace cette URL par l’URL publique de ta photo si tu en as une.
-  Pour l’instant j’ai mis une image neutre de secours.
-*/
-const PHOTO_URL = "https://drive.google.com/uc?export=view&id=1Alg3UUKRzuiGOf27EqJ1tZv3BGD4nTZ-";
+const PHOTO_URL =
+  "https://drive.google.com/thumbnail?id=1Alg3UUKRzuiGOf27EqJ1tZv3BGD4nTZ-&sz=w400";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -220,6 +217,7 @@ app.get("/recontact", async (req, res) => {
             display: block;
             margin: 18px auto;
             border: 4px solid #f0f0f0;
+            background: #fff;
           }
 
           .name {
@@ -247,27 +245,12 @@ app.get("/recontact", async (req, res) => {
             margin-top: 10px;
             line-height: 1.5;
           }
-
-          .btn {
-            display: inline-block;
-            margin-top: 20px;
-            background: #f57c00;
-            color: #fff;
-            text-decoration: none;
-            padding: 14px 22px;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 16px;
-          }
-
-          .btn:hover {
-            opacity: 0.95;
-          }
         </style>
       </head>
       <body>
         <div class="box">
           <h1>Votre demande a bien été prise en compte</h1>
+
           <div class="subtitle">
             Florent vous rappelle dans les plus brefs délais.
           </div>
@@ -282,8 +265,6 @@ app.get("/recontact", async (req, res) => {
           <div class="small">
             Vous pouvez aussi l’appeler directement si votre demande est urgente.
           </div>
-
-          <a class="btn" href="tel:0671274575">Appeler Florent</a>
         </div>
       </body>
     </html>
