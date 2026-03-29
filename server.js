@@ -1,5 +1,6 @@
 const express = require("express");
 const SibApiV3Sdk = require("sib-api-v3-sdk");
+const { google } = require("googleapis");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -16,6 +17,17 @@ const SENDER_NAME = process.env.SENDER_NAME || "Bizon Matériel";
 
 const PHOTO_URL =
   "https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400";
+
+const SPREADSHEET_ID =
+  process.env.SPREADSHEET_ID || "1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug";
+
+const GOOGLE_SERVICE_ACCOUNT_EMAIL =
+  process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
+
+const GOOGLE_PRIVATE_KEY =
+  (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+const TRACKING_SHEET_NAME = "Tracking";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -46,6 +58,13 @@ function formatDateFR(d) {
   return new Date(d).toLocaleString("fr-FR", {
     timeZone: "Europe/Paris"
   });
+}
+
+function getPixelBuffer() {
+  return Buffer.from(
+    "R0lGODlhAQABAPAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+    "base64"
+  );
 }
 
 async function sendAlertEmail({ subject, html, text }) {
@@ -104,6 +123,51 @@ function buildAlertText(title, data) {
   ].join("\n");
 }
 
+function buildTrackingRow(eventName, data) {
+  return [
+    new Date().toISOString(),
+    asTrimStr(eventName),
+    asTrimStr(data.c),
+    asTrimStr(data.pid),
+    asTrimStr(data.rs),
+    asTrimStr(data.cp),
+    asTrimStr(data.ape),
+    asTrimStr(data.g)
+  ];
+}
+
+async function getSheetsClient() {
+  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_EMAIL manquante");
+  }
+  if (!GOOGLE_PRIVATE_KEY) {
+    throw new Error("GOOGLE_PRIVATE_KEY manquante");
+  }
+
+  const auth = new google.auth.JWT({
+    email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: GOOGLE_PRIVATE_KEY,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  });
+
+  await auth.authorize();
+  return google.sheets({ version: "v4", auth });
+}
+
+async function appendTrackingRow(eventName, data) {
+  const sheets = await getSheetsClient();
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${TRACKING_SHEET_NAME}!A:H`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [buildTrackingRow(eventName, data)]
+    }
+  });
+}
+
 /*******************************************************
  * ✅ ROUTES TECHNIQUES
  *******************************************************/
@@ -116,8 +180,40 @@ app.get("/ping", (req, res) => {
 });
 
 /*******************************************************
+ * ✅ PIXEL OUVERTURE
+ *******************************************************/
+app.get("/open", async (req, res) => {
+  const data = {
+    pid: asTrimStr(req.query.pid),
+    c: asTrimStr(req.query.c),
+    rs: asTrimStr(req.query.rs),
+    cp: asTrimStr(req.query.cp),
+    ape: asTrimStr(req.query.ape),
+    g: asTrimStr(req.query.g)
+  };
+
+  try {
+    await appendTrackingRow("Ouverture", data);
+  } catch (err) {
+    console.error("Erreur tracking ouverture :", err.message || err);
+  }
+
+  const img = getPixelBuffer();
+
+  res.writeHead(200, {
+    "Content-Type": "image/gif",
+    "Content-Length": img.length,
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    Pragma: "no-cache",
+    Expires: "0"
+  });
+
+  res.end(img);
+});
+
+/*******************************************************
  * ✅ ROUTE OCCASION
- * 1 clic = mail envoyé + redirection directe
+ * 1 clic = tracking + mail + redirection directe
  *******************************************************/
 app.get("/occasion", async (req, res) => {
   const data = {
@@ -128,6 +224,12 @@ app.get("/occasion", async (req, res) => {
     ape: asTrimStr(req.query.ape),
     g: asTrimStr(req.query.g)
   };
+
+  try {
+    await appendTrackingRow("Clic occasion", data);
+  } catch (err) {
+    console.error("Erreur tracking occasion :", err.message || err);
+  }
 
   try {
     await sendAlertEmail({
@@ -144,7 +246,7 @@ app.get("/occasion", async (req, res) => {
 
 /*******************************************************
  * ✅ ROUTE RECONTACT
- * 1 clic = mail envoyé + page personnalisée
+ * 1 clic = tracking + mail + page personnalisée
  *******************************************************/
 app.get("/recontact", async (req, res) => {
   const data = {
@@ -155,6 +257,12 @@ app.get("/recontact", async (req, res) => {
     ape: asTrimStr(req.query.ape),
     g: asTrimStr(req.query.g)
   };
+
+  try {
+    await appendTrackingRow("Clic recontact", data);
+  } catch (err) {
+    console.error("Erreur tracking recontact :", err.message || err);
+  }
 
   try {
     await sendAlertEmail({
