@@ -7,6 +7,16 @@ const PORT = process.env.PORT || 10000;
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
 const ALERT_EMAIL = process.env.ALERT_EMAIL || "";
+
+const GOOGLE_SERVICE_ACCOUNT_EMAIL =
+  process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
+
+const GOOGLE_PRIVATE_KEY =
+  (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+const SPREADSHEET_ID =
+  process.env.SPREADSHEET_ID || "1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug";
+
 const OCCASION_URL =
   process.env.OCCASION_URL ||
   "https://www.actemis-manutention.com/occasion,materiel-manutention.php";
@@ -17,15 +27,6 @@ const SENDER_NAME = process.env.SENDER_NAME || "Bizon Matériel";
 
 const PHOTO_URL =
   "https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400";
-
-const SPREADSHEET_ID =
-  process.env.SPREADSHEET_ID || "1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug";
-
-const GOOGLE_SERVICE_ACCOUNT_EMAIL =
-  process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
-
-const GOOGLE_PRIVATE_KEY =
-  (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 
 const TRACKING_SHEET_NAME = "Tracking";
 
@@ -140,6 +141,7 @@ async function getSheetsClient() {
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL) {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_EMAIL manquante");
   }
+
   if (!GOOGLE_PRIVATE_KEY) {
     throw new Error("GOOGLE_PRIVATE_KEY manquante");
   }
