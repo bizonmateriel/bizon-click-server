@@ -9,8 +9,16 @@ const ALERT_EMAIL = process.env.ALERT_EMAIL || "";
 const OCCASION_URL =
   process.env.OCCASION_URL ||
   "https://www.actemis-manutention.com/occasion,materiel-manutention.php";
-const SENDER_EMAIL = process.env.SENDER_EMAIL || ALERT_EMAIL || "no-reply@example.com";
+
+const SENDER_EMAIL =
+  process.env.SENDER_EMAIL || ALERT_EMAIL || "no-reply@example.com";
 const SENDER_NAME = process.env.SENDER_NAME || "Bizon Matériel";
+
+/*
+  👉 Remplace cette URL par l’URL publique de ta photo si tu en as une.
+  Pour l’instant j’ai mis une image neutre de secours.
+*/
+const PHOTO_URL = "https://drive.google.com/uc?export=view&id=1Alg3UUKRzuiGOf27EqJ1tZv3BGD4nTZ-";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -139,7 +147,7 @@ app.get("/occasion", async (req, res) => {
 
 /*******************************************************
  * ✅ ROUTE RECONTACT
- * 1 clic = mail envoyé + page de confirmation
+ * 1 clic = mail envoyé + page personnalisée
  *******************************************************/
 app.get("/recontact", async (req, res) => {
   const data = {
@@ -172,37 +180,110 @@ app.get("/recontact", async (req, res) => {
           body {
             margin: 0;
             font-family: Arial, sans-serif;
-            background: #f7f7f7;
+            background: #f4f4f4;
             color: #222;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            padding: 20px;
           }
+
           .box {
-            background: #fff;
-            border: 1px solid #ddd;
-            border-radius: 12px;
+            background: #ffffff;
+            border: 1px solid #dddddd;
+            border-radius: 14px;
             padding: 30px;
             max-width: 520px;
+            width: 100%;
             text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            box-shadow: 0 6px 24px rgba(0,0,0,0.08);
           }
+
           h1 {
-            font-size: 24px;
-            margin-bottom: 12px;
+            font-size: 28px;
+            margin: 0 0 12px 0;
+            line-height: 1.3;
           }
-          p {
+
+          .subtitle {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #333;
+          }
+
+          .photo {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            object-fit: cover;
+            display: block;
+            margin: 18px auto;
+            border: 4px solid #f0f0f0;
+          }
+
+          .name {
+            font-size: 22px;
+            font-weight: bold;
+            margin-top: 8px;
+          }
+
+          .role {
             font-size: 16px;
+            color: #666;
+            margin-top: 4px;
+          }
+
+          .phone {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 18px;
+            color: #111;
+          }
+
+          .small {
+            font-size: 15px;
+            color: #555;
+            margin-top: 10px;
             line-height: 1.5;
-            margin: 8px 0;
+          }
+
+          .btn {
+            display: inline-block;
+            margin-top: 20px;
+            background: #f57c00;
+            color: #fff;
+            text-decoration: none;
+            padding: 14px 22px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+          }
+
+          .btn:hover {
+            opacity: 0.95;
           }
         </style>
       </head>
       <body>
         <div class="box">
           <h1>Votre demande a bien été prise en compte</h1>
-          <p>Notre équipe vous recontactera dans les meilleurs délais.</p>
+          <div class="subtitle">
+            Florent vous rappelle dans les plus brefs délais.
+          </div>
+
+          <img class="photo" src="${escapeHtml(PHOTO_URL)}" alt="Florent Clerc">
+
+          <div class="name">Florent Clerc</div>
+          <div class="role">Commercial BTP - Secteur 83</div>
+
+          <div class="phone">📞 06 71 27 45 75</div>
+
+          <div class="small">
+            Vous pouvez aussi l’appeler directement si votre demande est urgente.
+          </div>
+
+          <a class="btn" href="tel:0671274575">Appeler Florent</a>
         </div>
       </body>
     </html>
