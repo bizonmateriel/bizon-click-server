@@ -15,7 +15,7 @@ const SENDER_EMAIL =
 const SENDER_NAME = process.env.SENDER_NAME || "Bizon Matériel";
 
 const PHOTO_URL =
-  "https://drive.google.com/thumbnail?id=1Alg3UUKRzuiGOf27EqJ1tZv3BGD4nTZ-&sz=w400";
+  "https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -238,13 +238,6 @@ app.get("/recontact", async (req, res) => {
             margin-top: 18px;
             color: #111;
           }
-
-          .small {
-            font-size: 15px;
-            color: #555;
-            margin-top: 10px;
-            line-height: 1.5;
-          }
         </style>
       </head>
       <body>
@@ -261,10 +254,6 @@ app.get("/recontact", async (req, res) => {
           <div class="role">Commercial BTP - Secteur 83</div>
 
           <div class="phone">📞 06 71 27 45 75</div>
-
-          <div class="small">
-            Vous pouvez aussi l’appeler directement si votre demande est urgente.
-          </div>
         </div>
       </body>
     </html>
