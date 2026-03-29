@@ -1,0 +1,162 @@
+MÉMO PROJET — CRM MAILING BIZON MATÉRIEL / GOOGLE SHEETS + SERVEUR RENDER
+
+CONTEXTE GÉNÉRAL
+- Projet CRM/mailing sur Google Sheets + Apps Script.
+- Objectif : envoyer des mails prospects depuis Google Sheets, avec 2 boutons dans le mail :
+  1) "Occasions disponibles"
+  2) "Être recontacté"
+- Problème initial : la Web App Google Apps Script utilisée pour gérer les clics ouvrait souvent une page "impossible d’ouvrir le fichier / la page pour le moment".
+- Conclusion prise : on garde Google Sheets pour le CRM et l’envoi des mails, mais on déporte la gestion des clics vers un serveur Node.js hébergé sur Render.
+- Solution actuelle fonctionnelle : boutons du mail branchés sur le serveur Render, qui envoie les mails d’alerte via Brevo.
+
+INFOS GOOGLE SHEETS / APPS SCRIPT
+- Spreadsheet ID :
+  1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug
+- Onglets :
+  - Prospects
+  - Parametres
+  - Tracking
+- Ligne de départ des prospects :
+  DATA_START_ROW = 2
+
+STRUCTURE COLONNES ONGLET PROSPECTS
+- A = RAISON SOCIALE
+- B = VILLE
+- C = CODE POSTALE
+- D = TELEPHONE 1
+- E = TELEPHONE 2
+- F = MAIL 1
+- G = MAIL 2
+- H = CODE APE
+- I = SIRET / SIREN
+- J = STATUT
+- K = HEURE & DATE ENVOI
+- L = ERREUR
+- M = ACTIVITE
+- N = INTERESSE OCCASION
+- O = PROSPECT_ID
+
+PARAMÈTRES IMPORTANTS ONGLET PARAMETRES
+- M3 = groupes autorisés à envoyer
+- A5 = filtre CP
+- A6 = ID campagne
+- M2 = signature
+- M4 = pièces jointes
+- F13:G14 = limite d’envoi par run
+- L13 = heure d’envoi auto
+- D13 = statut automatisation
+- D14 = dernier envoi
+- D15 = nombre envoyé
+- D16 = prochain envoi
+
+SCRIPT APPS SCRIPT — ÉTAT ACTUEL
+- Le script complet Apps Script a été refait et fonctionne.
+- Il inclut :
+  - auto CP
+  - auto PROSPECT_ID
+  - menus
+  - couleurs APE
+  - automatisation
+  - mailing
+- Le script actuel utilise maintenant :
+  TRACKING_BASE_URL = https://bizon-click-server.onrender.com
+- Les boutons du mail sont générés avec :
+  - /occasion
+  - /recontact
+- Le pixel d’ouverture a été supprimé dans la version corrigée finale.
+- Le doGet Google est conservé mais n’est plus utilisé pour gérer les clics principaux.
+- Important : les clics passent maintenant par Render, PAS par la Web App Google.
+
+SERVEUR EXTERNE — CHOIX FINAL
+- Hébergement : Render
+- Repo GitHub :
+  bizonmateriel/bizon-click-server
+- URL serveur Render :
+  https://bizon-click-server.onrender.com
+
+STACK DU SERVEUR
+- Node.js
+- Express
+- Brevo API pour l’envoi des mails d’alerte
+
+FICHIERS DU PROJET SERVEUR
+- package.json
+- package-lock.json
+- server.js
+- .env (non poussé sur GitHub)
+- .gitignore
+
+CONTENU .GITIGNORE
+- node_modules/
+- Microsoft VS Code/
+- .env
+
+BREVO
+- Gmail a été abandonné car le compte était Google Workspace / admin, donc mot de passe d’application indisponible.
+- Brevo a été choisi à la place.
+- La clé BREVO_API_KEY a été créée et configurée sur Render.
+- L’envoi des mails de clic passe par Brevo.
+
+VARIABLES RENDER IMPORTANTES
+- BREVO_API_KEY = configurée
+- ALERT_EMAIL = f.clerc@bizon-materiel.fr
+- OCCASION_URL = https://www.actemis-manutention.com/occasion,materiel-manutention.php
+
+EMAIL D’ALERTE
+- Le bon email de réception des alertes est :
+  f.clerc@bizon-materiel.fr
+
+ROUTES SERVEUR QUI MARCHENT
+- https://bizon-click-server.onrender.com/occasion
+- https://bizon-click-server.onrender.com/recontact
+
+TESTS DÉJÀ VALIDÉS
+- Le serveur local a fonctionné.
+- Les mails Brevo sont bien partis.
+- Le serveur Render a été mis en ligne avec succès.
+- Le test direct sur :
+  /recontact
+  a affiché la bonne page.
+- Le test via le script Apps Script final a marché.
+- Les boutons du mail ouvrent bien la bonne page / déclenchent bien le système.
+
+POINT IMPORTANT SUR RENDER GRATUIT
+- Render gratuit “s’endort” quand il n’est pas utilisé.
+- Donc le premier clic peut prendre un peu de temps.
+- Ce n’est pas un bug du script, c’est normal.
+
+ÉTAT ACTUEL DU PROJET
+- Le système EST FONCTIONNEL pour :
+  - envoi mailing depuis Google Sheets
+  - boutons “Occasions disponibles”
+  - bouton “Être recontacté”
+  - réception des mails d’alerte via Brevo
+  - redirection vers la page occasion
+- Le système N’ÉCRIT PAS ENCORE automatiquement les clics dans l’onglet Tracking depuis Render.
+- Avant, le Tracking était alimenté par doGet côté Google Apps Script.
+- Maintenant que les clics passent par Render, il faudrait une amélioration future :
+  => faire écrire Render dans Google Sheet pour tracer automatiquement les clics dans l’onglet Tracking.
+
+PROCHAINE ÉTAPE SI ON REPREND LE PROJET
+- Vérifier le script complet actuellement en place dans Apps Script.
+- Vérifier que les boutons pointent bien vers :
+  https://bizon-click-server.onrender.com/occasion
+  https://bizon-click-server.onrender.com/recontact
+- Puis travailler sur l’amélioration suivante :
+  => synchroniser les clics Render vers l’onglet Tracking Google Sheets.
+
+RAPPEL IMPORTANT
+- Ne pas repartir sur la Web App Google pour les clics : elle a déjà été abandonnée car instable chez moi.
+- Conserver la logique actuelle :
+  Google Sheets = CRM + envoi mailing
+  Render = gestion des clics
+  Brevo = envoi des mails d’alerte
+
+SI JE RECOLLE CE MÉMO
+- Reprendre directement à partir de l’état actuel.
+- Considérer que :
+  - le script Apps Script final Render existe
+  - le serveur Render existe
+  - Brevo est configuré
+  - f.clerc@bizon-materiel.fr est le bon mail d’alerte
+  - le prochain chantier = logging / tracking automatique vers Google Sheet
