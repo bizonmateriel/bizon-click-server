@@ -1,25 +1,47 @@
-MÉMO PROJET — CRM MAILING BIZON MATÉRIEL / GOOGLE SHEETS + SERVEUR RENDER
+MÉMO PROJET — BIZON MATÉRIEL / GOOGLE SHEETS + APPS SCRIPT + RENDER + TRACKING
 
 CONTEXTE GÉNÉRAL
-- Projet CRM/mailing sur Google Sheets + Apps Script.
-- Objectif : envoyer des mails prospects depuis Google Sheets, avec 2 boutons dans le mail :
-  1) "Occasions disponibles"
-  2) "Être recontacté"
-- Problème initial : la Web App Google Apps Script utilisée pour gérer les clics ouvrait souvent une page "impossible d’ouvrir le fichier / la page pour le moment".
-- Conclusion prise : on garde Google Sheets pour le CRM et l’envoi des mails, mais on déporte la gestion des clics vers un serveur Node.js hébergé sur Render.
-- Solution actuelle fonctionnelle : boutons du mail branchés sur le serveur Render, qui envoie les mails d’alerte via Brevo.
+- Projet CRM / mailing Bizon Matériel.
+- Google Sheets + Apps Script pour :
+  - gestion prospects
+  - envoi mails
+  - auto CP
+  - auto PROSPECT_ID
+  - automatisation
+  - couleurs APE
+- Serveur Node.js sur Render pour :
+  - bouton “Occasions disponibles”
+  - bouton “Être recontacté”
+  - mails d’alerte via Brevo
+  - page client personnalisée
+  - futur tracking ouvertures + clics vers Google Sheet
 
-INFOS GOOGLE SHEETS / APPS SCRIPT
+--------------------------------------------------
+1) ÉTAT DU PROJET AVANT LA SESSION D’AUJOURD’HUI
+--------------------------------------------------
+
+SITUATION GÉNÉRALE
+- Le système Google Sheets + Apps Script fonctionnait déjà pour :
+  - l’envoi des mails
+  - les boutons “Occasions disponibles”
+  - les boutons “Être recontacté”
+- Les clics ne passent plus par la Web App Google Apps Script.
+- Les clics passent par le serveur Render :
+  https://bizon-click-server.onrender.com
+- Brevo est utilisé pour les mails d’alerte.
+- Le mail d’alerte cible est :
+  f.clerc@bizon-materiel.fr
+
+SPREADSHEET
 - Spreadsheet ID :
   1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug
-- Onglets :
-  - Prospects
-  - Parametres
-  - Tracking
-- Ligne de départ des prospects :
-  DATA_START_ROW = 2
 
-STRUCTURE COLONNES ONGLET PROSPECTS
+ONGLETS
+- Prospects
+- Parametres
+- Tracking
+
+COLONNES ONGLET PROSPECTS
 - A = RAISON SOCIALE
 - B = VILLE
 - C = CODE POSTALE
@@ -49,114 +71,287 @@ PARAMÈTRES IMPORTANTS ONGLET PARAMETRES
 - D15 = nombre envoyé
 - D16 = prochain envoi
 
-SCRIPT APPS SCRIPT — ÉTAT ACTUEL
-- Le script complet Apps Script a été refait et fonctionne.
-- Il inclut :
-  - auto CP
-  - auto PROSPECT_ID
-  - menus
-  - couleurs APE
-  - automatisation
-  - mailing
-- Le script actuel utilise maintenant :
-  TRACKING_BASE_URL = https://bizon-click-server.onrender.com
-- Les boutons du mail sont générés avec :
+SCRIPT APPS SCRIPT DE BASE
+- TRACKING_BASE_URL :
+  https://bizon-click-server.onrender.com
+- Boutons dans les mails :
   - /occasion
   - /recontact
-- Le pixel d’ouverture a été supprimé dans la version corrigée finale.
-- Le doGet Google est conservé mais n’est plus utilisé pour gérer les clics principaux.
-- Important : les clics passent maintenant par Render, PAS par la Web App Google.
 
-SERVEUR EXTERNE — CHOIX FINAL
-- Hébergement : Render
-- Repo GitHub :
-  bizonmateriel/bizon-click-server
-- URL serveur Render :
-  https://bizon-click-server.onrender.com
+PROBLÈME STRUCTUREL IDENTIFIÉ
+- Render gratuit s’endort après inactivité.
+- Résultat :
+  - premier clic client = parfois écran noir / réveil / attente
+  - ce n’est pas un bug du script
+  - c’est la limite du plan gratuit Render
+- Conclusion :
+  - solution fiable = Render payant / always on
+  - le ping UptimeRobot aide un peu, mais ne garantit pas 0 réveil
 
-STACK DU SERVEUR
-- Node.js
-- Express
-- Brevo API pour l’envoi des mails d’alerte
+--------------------------------------------------
+2) CE QUI A ÉTÉ FAIT AUJOURD’HUI
+--------------------------------------------------
 
-FICHIERS DU PROJET SERVEUR
-- package.json
-- package-lock.json
-- server.js
-- .env (non poussé sur GitHub)
-- .gitignore
+A. RENDER / SERVEUR NODE
+- Le server.js a été plusieurs fois corrigé.
+- Problèmes résolus pendant la session :
+  1. app non défini
+  2. module sib-api-v3-sdk manquant
+  3. variables Render manquantes (ALERT_EMAIL)
+  4. redirection /occasion à double clic
+  5. port Render / app.listen
+  6. personnalisation de la page /recontact
+  7. ajout photo Florent
+  8. début du tracking vers Google Sheet
 
-CONTENU .GITIGNORE
-- node_modules/
-- Microsoft VS Code/
-- .env
+B. ROUTE /occasion
+- Objectif validé :
+  - 1 clic
+  - envoi mail alerte
+  - redirection directe vers :
+    https://www.actemis-manutention.com/occasion,materiel-manutention.php
+- Plus de double page intermédiaire voulue.
+- Fonctionnement souhaité :
+  - clic client
+  - mail d’alerte
+  - redirection directe
 
-BREVO
-- Gmail a été abandonné car le compte était Google Workspace / admin, donc mot de passe d’application indisponible.
-- Brevo a été choisi à la place.
-- La clé BREVO_API_KEY a été créée et configurée sur Render.
-- L’envoi des mails de clic passe par Brevo.
+C. ROUTE /recontact
+- Page client personnalisée créée.
+- Message voulu :
+  “Florent vous rappelle dans les plus brefs délais.”
+- Photo Florent intégrée.
+- Téléphone affiché :
+  06 71 27 45 75
+- Le bouton “Appeler Florent” a finalement été supprimé.
+- La phrase :
+  “Vous pouvez aussi l’appeler directement si votre demande est urgente.”
+  a été supprimée à la fin.
 
-VARIABLES RENDER IMPORTANTES
-- BREVO_API_KEY = configurée
+D. PHOTO FLORENT
+- Première image trop large / type carte, mal affichée dans le rond.
+- Ensuite remplacement par une photo visage seul.
+- Lien Drive retenu pour la tête :
+  https://drive.google.com/file/d/1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM/view?usp=sharing
+- URL image utilisée côté serveur :
+  https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400
+
+E. VARIABLES RENDER
+Variables utilisées / nécessaires :
+- BREVO_API_KEY
 - ALERT_EMAIL = f.clerc@bizon-materiel.fr
+- SENDER_EMAIL = f.clerc@bizon-materiel.fr
+- SENDER_NAME = Bizon Matériel
 - OCCASION_URL = https://www.actemis-manutention.com/occasion,materiel-manutention.php
 
-EMAIL D’ALERTE
-- Le bon email de réception des alertes est :
-  f.clerc@bizon-materiel.fr
+Pour le tracking Google Sheets, ajoutées / à vérifier :
+- GOOGLE_SERVICE_ACCOUNT_EMAIL
+- GOOGLE_PRIVATE_KEY
+- SPREADSHEET_ID
 
-ROUTES SERVEUR QUI MARCHENT
-- https://bizon-click-server.onrender.com/occasion
-- https://bizon-click-server.onrender.com/recontact
+Attention :
+- GOOGLE_SERVICE_ACCOUNT_EMAIL ne doit PAS contenir de guillemets ni de virgule.
+- GOOGLE_PRIVATE_KEY :
+  - doit être la clé privée seule
+  - sans client_email mélangé dedans
+  - et le server.js utilise :
+    (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n")
 
-TESTS DÉJÀ VALIDÉS
-- Le serveur local a fonctionné.
-- Les mails Brevo sont bien partis.
-- Le serveur Render a été mis en ligne avec succès.
-- Le test direct sur :
-  /recontact
-  a affiché la bonne page.
-- Le test via le script Apps Script final a marché.
-- Les boutons du mail ouvrent bien la bonne page / déclenchent bien le système.
+F. GOOGLE CLOUD / SERVICE ACCOUNT
+- Création du projet Google Cloud faite.
+- Compte de service créé :
+  bizon-tracking
+- Clé JSON générée.
+- client_email obtenu :
+  bizon-tracking@graphite-hook-490620-r7.iam.gserviceaccount.com
+- private_key récupérée.
+- Il faut partager le Google Sheet avec ce compte en Éditeur.
+- API Google Sheets activée.
 
-POINT IMPORTANT SUR RENDER GRATUIT
-- Render gratuit “s’endort” quand il n’est pas utilisé.
-- Donc le premier clic peut prendre un peu de temps.
-- Ce n’est pas un bug du script, c’est normal.
+G. TRACKING OUVERTURES / CLICS
+Objectif de la session :
+- avoir les stats d’ouverture mail
+- avoir les stats clics
+- écrire tout ça dans l’onglet Tracking du Google Sheet
 
-ÉTAT ACTUEL DU PROJET
-- Le système EST FONCTIONNEL pour :
-  - envoi mailing depuis Google Sheets
-  - boutons “Occasions disponibles”
-  - bouton “Être recontacté”
-  - réception des mails d’alerte via Brevo
-  - redirection vers la page occasion
-- Le système N’ÉCRIT PAS ENCORE automatiquement les clics dans l’onglet Tracking depuis Render.
-- Avant, le Tracking était alimenté par doGet côté Google Apps Script.
-- Maintenant que les clics passent par Render, il faudrait une amélioration future :
-  => faire écrire Render dans Google Sheet pour tracer automatiquement les clics dans l’onglet Tracking.
+Deux briques ont été préparées :
 
-PROCHAINE ÉTAPE SI ON REPREND LE PROJET
-- Vérifier le script complet actuellement en place dans Apps Script.
-- Vérifier que les boutons pointent bien vers :
-  https://bizon-click-server.onrender.com/occasion
-  https://bizon-click-server.onrender.com/recontact
-- Puis travailler sur l’amélioration suivante :
-  => synchroniser les clics Render vers l’onglet Tracking Google Sheets.
+1. Apps Script
+- Ajout d’un pixel invisible dans les mails
+- Le bon endroit pour le pixel est dans mailing_sendBatch_, après récupération du pid
+- Le pixel retenu :
+  <img src="https://bizon-click-server.onrender.com/open?pid=...&c=..." width="1" height="1" style="display:none;" alt="">
 
-RAPPEL IMPORTANT
-- Ne pas repartir sur la Web App Google pour les clics : elle a déjà été abandonnée car instable chez moi.
-- Conserver la logique actuelle :
-  Google Sheets = CRM + envoi mailing
-  Render = gestion des clics
-  Brevo = envoi des mails d’alerte
+2. Serveur Render
+- Ajout de la route /open
+- Ajout de googleapis
+- Ajout du code pour append des lignes dans l’onglet Tracking
+- Events prévus côté Tracking :
+  - Ouverture
+  - Clic occasion
+  - Clic recontact
 
-SI JE RECOLLE CE MÉMO
-- Reprendre directement à partir de l’état actuel.
-- Considérer que :
-  - le script Apps Script final Render existe
-  - le serveur Render existe
-  - Brevo est configuré
-  - f.clerc@bizon-materiel.fr est le bon mail d’alerte
-  - le prochain chantier = logging / tracking automatique vers Google Sheet
+--------------------------------------------------
+3) ÉTAT EXACT DU SCRIPT APPS SCRIPT À LA FIN DE LA SESSION
+--------------------------------------------------
+
+Le script Apps Script complet actuellement en base est celui-ci :
+- version “PACK COMPLET — Prospects (Bizon Matériel) — VERSION STABLE SIMPLE — RENDER + 1 CLIC PAR BOUTON”
+- avec :
+  - TRACKING_BASE_URL = "https://bizon-click-server.onrender.com"
+  - pixel ouverture ajouté dans mailing_sendBatch_
+  - boutons occasion / recontact générés côté Render
+
+IMPORTANT SUR LE SCRIPT APPS SCRIPT
+- Une erreur pid is not defined est apparue pendant la session.
+- Elle a été corrigée conceptuellement :
+  le pixel doit être créé dans mailing_sendBatch_ APRÈS :
+    const pid = ...
+  et APRÈS :
+    const rs = ...
+  et AVANT construction complète du htmlBody final.
+- La version à retenir :
+  - const pid = ...
+  - const rs = ...
+  - const pixel = ...
+  - let htmlBody = _toHtmlPreserve_(tpl.bodyVal);
+  - htmlBody += pixel;
+
+IMPORTANT
+- Le script complet Apps Script collé dans cette conversation à la fin doit être considéré comme la base de travail actuelle.
+- Il faudra le relire au prochain échange uniquement si besoin de validation finale du bloc pixel.
+
+--------------------------------------------------
+4) ÉTAT EXACT DU SERVER.JS À LA FIN DE LA SESSION
+--------------------------------------------------
+
+Le server.js final à retenir est :
+- version propre complète
+- sans doublons
+- avec :
+  - express
+  - sib-api-v3-sdk
+  - googleapis
+  - /ping
+  - /open
+  - /occasion
+  - /recontact
+  - tracking vers Google Sheet
+  - page personnalisée recontact Florent
+  - app.listen(PORT, "0.0.0.0", ...)
+
+IMPORTANT
+- À un moment il y avait des doublons au début du fichier sur :
+  - SPREADSHEET_ID
+  - GOOGLE_SERVICE_ACCOUNT_EMAIL
+  - GOOGLE_PRIVATE_KEY
+- La bonne version est celle SANS doublons.
+- Le dernier server.js propre redonné en fin de session est la référence.
+
+PHOTO_URL retenu dans server.js :
+- https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400
+
+TRACKING_SHEET_NAME retenu :
+- Tracking
+
+SPREADSHEET_ID retenu :
+- 1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug
+
+GOOGLE SERVICE ACCOUNT retenu :
+- bizon-tracking@graphite-hook-490620-r7.iam.gserviceaccount.com
+
+--------------------------------------------------
+5) CE QUI N’ÉTAIT PAS ENCORE VALIDÉ À LA FIN
+--------------------------------------------------
+
+À vérifier au prochain échange :
+1. Que le dernier server.js propre a bien été collé localement
+2. Que git add / commit / push ont bien été faits avec cette bonne version
+3. Que Render a bien redéployé sans erreur
+4. Que GOOGLE_PRIVATE_KEY est bien au bon format dans Render
+5. Que GOOGLE_SERVICE_ACCOUNT_EMAIL n’a ni guillemet ni virgule
+6. Que le Google Sheet est bien partagé avec le compte service en Éditeur
+7. Que l’onglet Tracking reçoit bien :
+   - Ouverture
+   - Clic occasion
+   - Clic recontact
+
+--------------------------------------------------
+6) PROBLÈMES / ERREURS RENCONTRÉS AUJOURD’HUI
+--------------------------------------------------
+
+- page noire / réveil serveur Render
+- app is not defined
+- sib-api-v3-sdk manquant
+- ALERT_EMAIL manquante
+- pid is not defined dans Apps Script
+- private key Google mal formatée
+- GOOGLE_SERVICE_ACCOUNT_EMAIL avec un guillemet final ou une virgule
+- doublons de constantes au début du server.js
+- photo Drive pas toujours idéale en img standard
+- version photo carte trop zoomée dans le rond
+
+--------------------------------------------------
+7) CE QU’IL FAUDRA FAIRE EN PREMIER LA PROCHAINE FOIS
+--------------------------------------------------
+
+PRIORITÉ 1
+- Repartir du dernier server.js propre envoyé en fin de session
+- Vérifier les variables Render
+- Vérifier que le Google Sheet est partagé avec le service account
+- Lancer un test réel
+
+PRIORITÉ 2
+- Vérifier dans l’onglet Tracking que les événements s’écrivent bien :
+  - Ouverture
+  - Clic occasion
+  - Clic recontact
+
+PRIORITÉ 3
+- Si tout marche :
+  passer à un vrai dashboard stats dans Google Sheets :
+  - taux ouverture
+  - taux clic
+  - stats par campagne
+  - stats par code postal
+  - stats par APE
+  - prospects les plus chauds
+
+--------------------------------------------------
+8) RAPPEL BUSINESS IMPORTANT
+--------------------------------------------------
+
+- Le système actuel est très avancé.
+- Le seul vrai point faible côté client = Render gratuit qui s’endort.
+- Pour une expérience client propre et sans page noire :
+  -> passer sur Render payant / always on
+- Le tracking d’ouvertures reste un indicateur utile mais pas parfait.
+- Les clics “Occasion” et surtout “Être recontacté” restent les signaux les plus forts.
+
+--------------------------------------------------
+9) INFOS À RETENIR RAPIDEMENT
+--------------------------------------------------
+
+EMAIL ALERTE
+- f.clerc@bizon-materiel.fr
+
+NUMÉRO FLORENT
+- 06 71 27 45 75
+
+SPREADSHEET
+- 1j3Mz-Gnx0g823agXlwuKLjU5wb8EbMjsXG7fonqs8ug
+
+SERVEUR RENDER
+- https://bizon-click-server.onrender.com
+
+PHOTO FLORENT
+- https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400
+
+SERVICE ACCOUNT GOOGLE
+- bizon-tracking@graphite-hook-490620-r7.iam.gserviceaccount.com
+
+OBJECTIF PROCHAINE FOIS
+- finaliser le tracking live dans Tracking
+- tester ouverture/clic
+- construire dashboard stats
+REPRENDS DIRECT À PARTIR DE CE MÉMO, DU DERNIER APPS SCRIPT COMPLET ET DU DERNIER SERVER.JS PROPRE SANS DOUBLONS.

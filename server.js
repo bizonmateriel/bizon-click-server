@@ -29,6 +29,13 @@ const PHOTO_URL =
   "https://drive.google.com/thumbnail?id=1njdgz6MDpDUssp3he0QNLjKSiuKEzdpM&sz=w400";
 
 const TRACKING_SHEET_NAME = "Tracking";
+const PROSPECTS_SHEET_NAME = "Prospects";
+
+// Colonnes de synthèse dans Prospects
+const COL_PROSPECT_ID = "O";
+const COL_NB_OUVERTURES = "P";
+const COL_NB_CLICS_OCCASION = "Q";
+const COL_NB_CLICS_RECONTACT = "R";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -66,6 +73,11 @@ function getPixelBuffer() {
     "R0lGODlhAQABAPAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
     "base64"
   );
+}
+
+function toInt(v) {
+  const n = parseInt(asTrimStr(v), 10);
+  return Number.isFinite(n) ? n : 0;
 }
 
 async function sendAlertEmail({ subject, html, text }) {
@@ -171,6 +183,87 @@ async function appendTrackingRow(eventName, data) {
 }
 
 /*******************************************************
+ * ✅ MISE À JOUR DES COMPTEURS DANS PROSPECTS
+ *******************************************************/
+async function findProspectRowByPid(pid) {
+  const cleanPid = asTrimStr(pid);
+  if (!cleanPid) return null;
+
+  const sheets = await getSheetsClient();
+
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${PROSPECTS_SHEET_NAME}!${COL_PROSPECT_ID}:${COL_PROSPECT_ID}`
+  });
+
+  const values = resp.data.values || [];
+
+  for (let i = 0; i < values.length; i++) {
+    const cellValue = asTrimStr(values[i] && values[i][0]);
+    if (cellValue === cleanPid) {
+      return i + 1; // index tableau -> numéro de ligne Sheets
+    }
+  }
+
+  return null;
+}
+
+async function incrementProspectCounter(pid, columnLetter) {
+  const cleanPid = asTrimStr(pid);
+  if (!cleanPid) {
+    console.log(`Compteur non incrémenté : pid vide pour colonne ${columnLetter}`);
+    return;
+  }
+
+  const row = await findProspectRowByPid(cleanPid);
+
+  if (!row) {
+    console.log(`Prospect introuvable pour pid=${cleanPid}`);
+    return;
+  }
+
+  const sheets = await getSheetsClient();
+  const cellRange = `${PROSPECTS_SHEET_NAME}!${columnLetter}${row}`;
+
+  const currentResp = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: cellRange
+  });
+
+  const currentValue =
+    currentResp.data.values &&
+    currentResp.data.values[0] &&
+    currentResp.data.values[0][0];
+
+  const nextValue = toInt(currentValue) + 1;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: cellRange,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[nextValue]]
+    }
+  });
+
+  console.log(`Compteur ${columnLetter}${row} mis à jour : ${nextValue}`);
+}
+
+async function trackEventAndIncrementCounter(eventName, data, columnLetter) {
+  try {
+    await appendTrackingRow(eventName, data);
+  } catch (err) {
+    console.error(`Erreur tracking ${eventName} :`, err.message || err);
+  }
+
+  try {
+    await incrementProspectCounter(data.pid, columnLetter);
+  } catch (err) {
+    console.error(`Erreur compteur ${eventName} :`, err.message || err);
+  }
+}
+
+/*******************************************************
  * ✅ ROUTES TECHNIQUES
  *******************************************************/
 app.get("/", (req, res) => {
@@ -194,11 +287,11 @@ app.get("/open", async (req, res) => {
     g: asTrimStr(req.query.g)
   };
 
-  try {
-    await appendTrackingRow("Ouverture", data);
-  } catch (err) {
-    console.error("Erreur tracking ouverture :", err.message || err);
-  }
+  await trackEventAndIncrementCounter(
+    "Ouverture",
+    data,
+    COL_NB_OUVERTURES
+  );
 
   const img = getPixelBuffer();
 
@@ -215,7 +308,7 @@ app.get("/open", async (req, res) => {
 
 /*******************************************************
  * ✅ ROUTE OCCASION
- * 1 clic = tracking + mail + redirection directe
+ * 1 clic = tracking + compteur + mail + redirection directe
  *******************************************************/
 app.get("/occasion", async (req, res) => {
   const data = {
@@ -227,11 +320,11 @@ app.get("/occasion", async (req, res) => {
     g: asTrimStr(req.query.g)
   };
 
-  try {
-    await appendTrackingRow("Clic occasion", data);
-  } catch (err) {
-    console.error("Erreur tracking occasion :", err.message || err);
-  }
+  await trackEventAndIncrementCounter(
+    "Clic occasion",
+    data,
+    COL_NB_CLICS_OCCASION
+  );
 
   try {
     await sendAlertEmail({
@@ -248,7 +341,7 @@ app.get("/occasion", async (req, res) => {
 
 /*******************************************************
  * ✅ ROUTE RECONTACT
- * 1 clic = tracking + mail + page personnalisée
+ * 1 clic = tracking + compteur + mail + page personnalisée
  *******************************************************/
 app.get("/recontact", async (req, res) => {
   const data = {
@@ -260,11 +353,11 @@ app.get("/recontact", async (req, res) => {
     g: asTrimStr(req.query.g)
   };
 
-  try {
-    await appendTrackingRow("Clic recontact", data);
-  } catch (err) {
-    console.error("Erreur tracking recontact :", err.message || err);
-  }
+  await trackEventAndIncrementCounter(
+    "Clic recontact",
+    data,
+    COL_NB_CLICS_RECONTACT
+  );
 
   try {
     await sendAlertEmail({
