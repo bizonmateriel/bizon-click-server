@@ -37,6 +37,9 @@ const COL_NB_OUVERTURES = "P";
 const COL_NB_CLICS_OCCASION = "Q";
 const COL_NB_CLICS_RECONTACT = "R";
 
+// Anti doublon ouverture : 5 minutes
+const OPEN_DEDUP_MINUTES = 5;
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -78,6 +81,13 @@ function getPixelBuffer() {
 function toInt(v) {
   const n = parseInt(asTrimStr(v), 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseIsoDateSafe(v) {
+  const s = asTrimStr(v);
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 async function sendAlertEmail({ subject, html, text }) {
@@ -183,7 +193,7 @@ async function appendTrackingRow(eventName, data) {
 }
 
 /*******************************************************
- * ✅ MISE À JOUR DES COMPTEURS DANS PROSPECTS
+ * ✅ RECHERCHE PROSPECT PAR PID
  *******************************************************/
 async function findProspectRowByPid(pid) {
   const cleanPid = asTrimStr(pid);
@@ -201,13 +211,16 @@ async function findProspectRowByPid(pid) {
   for (let i = 0; i < values.length; i++) {
     const cellValue = asTrimStr(values[i] && values[i][0]);
     if (cellValue === cleanPid) {
-      return i + 1; // index tableau -> numéro de ligne Sheets
+      return i + 1;
     }
   }
 
   return null;
 }
 
+/*******************************************************
+ * ✅ INCRÉMENT COMPTEURS
+ *******************************************************/
 async function incrementProspectCounter(pid, columnLetter) {
   const cleanPid = asTrimStr(pid);
   if (!cleanPid) {
@@ -249,6 +262,60 @@ async function incrementProspectCounter(pid, columnLetter) {
   console.log(`Compteur ${columnLetter}${row} mis à jour : ${nextValue}`);
 }
 
+/*******************************************************
+ * ✅ DERNIÈRE OUVERTURE POUR ANTI-DOUBLON
+ * Recherche la dernière ligne "Ouverture" pour ce pid dans Tracking
+ *******************************************************/
+async function getLastOpenDateForPid(pid) {
+  const cleanPid = asTrimStr(pid);
+  if (!cleanPid) return null;
+
+  const sheets = await getSheetsClient();
+
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${TRACKING_SHEET_NAME}!A:D`
+  });
+
+  const values = resp.data.values || [];
+  let lastDate = null;
+
+  // On part du bas pour trouver la dernière ouverture la plus récente
+  for (let i = values.length - 1; i >= 1; i--) {
+    const row = values[i] || [];
+    const dateStr = asTrimStr(row[0]);
+    const eventName = asTrimStr(row[1]);
+    const rowPid = asTrimStr(row[3]);
+
+    if (eventName === "Ouverture" && rowPid === cleanPid) {
+      lastDate = parseIsoDateSafe(dateStr);
+      break;
+    }
+  }
+
+  return lastDate;
+}
+
+async function shouldIncrementOpenCounter(pid) {
+  const cleanPid = asTrimStr(pid);
+  if (!cleanPid) return false;
+
+  const lastOpen = await getLastOpenDateForPid(cleanPid);
+
+  if (!lastOpen) {
+    return true;
+  }
+
+  const now = new Date();
+  const diffMs = now.getTime() - lastOpen.getTime();
+  const diffMinutes = diffMs / 1000 / 60;
+
+  return diffMinutes > OPEN_DEDUP_MINUTES;
+}
+
+/*******************************************************
+ * ✅ TRACKING + COMPTEURS
+ *******************************************************/
 async function trackEventAndIncrementCounter(eventName, data, columnLetter) {
   try {
     await appendTrackingRow(eventName, data);
@@ -260,6 +327,35 @@ async function trackEventAndIncrementCounter(eventName, data, columnLetter) {
     await incrementProspectCounter(data.pid, columnLetter);
   } catch (err) {
     console.error(`Erreur compteur ${eventName} :`, err.message || err);
+  }
+}
+
+async function trackOpenWithDedup(data) {
+  let incrementOpen = true;
+
+  try {
+    incrementOpen = await shouldIncrementOpenCounter(data.pid);
+  } catch (err) {
+    console.error("Erreur anti-doublon ouverture :", err.message || err);
+    // En cas de doute, on garde le comptage
+    incrementOpen = true;
+  }
+
+  try {
+    await appendTrackingRow("Ouverture", data);
+  } catch (err) {
+    console.error("Erreur tracking ouverture :", err.message || err);
+  }
+
+  if (!incrementOpen) {
+    console.log(`Ouverture dédoublonnée pour pid=${asTrimStr(data.pid)}`);
+    return;
+  }
+
+  try {
+    await incrementProspectCounter(data.pid, COL_NB_OUVERTURES);
+  } catch (err) {
+    console.error("Erreur compteur ouverture :", err.message || err);
   }
 }
 
@@ -287,11 +383,7 @@ app.get("/open", async (req, res) => {
     g: asTrimStr(req.query.g)
   };
 
-  await trackEventAndIncrementCounter(
-    "Ouverture",
-    data,
-    COL_NB_OUVERTURES
-  );
+  await trackOpenWithDedup(data);
 
   const img = getPixelBuffer();
 
