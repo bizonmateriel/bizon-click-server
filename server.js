@@ -23,6 +23,7 @@ const OCCASION_URL =
 
 const SENDER_EMAIL =
   process.env.SENDER_EMAIL || ALERT_EMAIL || "no-reply@example.com";
+
 const SENDER_NAME = process.env.SENDER_NAME || "Bizon Matériel";
 
 const PHOTO_URL =
@@ -30,6 +31,7 @@ const PHOTO_URL =
 
 const TRACKING_SHEET_NAME = "Tracking";
 const PROSPECTS_SHEET_NAME = "Prospects";
+const PARAMS_SHEET_NAME = "Parametres";
 
 // Colonnes de synthèse dans Prospects
 const COL_PROSPECT_ID = "O";
@@ -83,11 +85,22 @@ function toInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function toFloat(v) {
+  const n = parseFloat(asTrimStr(v).replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
 function parseIsoDateSafe(v) {
   const s = asTrimStr(v);
   if (!s) return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0%";
+  return `${Math.round(n * 100)}%`;
 }
 
 async function sendAlertEmail({ subject, html, text }) {
@@ -264,7 +277,6 @@ async function incrementProspectCounter(pid, columnLetter) {
 
 /*******************************************************
  * ✅ DERNIÈRE OUVERTURE POUR ANTI-DOUBLON
- * Recherche la dernière ligne "Ouverture" pour ce pid dans Tracking
  *******************************************************/
 async function getLastOpenDateForPid(pid) {
   const cleanPid = asTrimStr(pid);
@@ -280,7 +292,6 @@ async function getLastOpenDateForPid(pid) {
   const values = resp.data.values || [];
   let lastDate = null;
 
-  // On part du bas pour trouver la dernière ouverture la plus récente
   for (let i = values.length - 1; i >= 1; i--) {
     const row = values[i] || [];
     const dateStr = asTrimStr(row[0]);
@@ -337,7 +348,6 @@ async function trackOpenWithDedup(data) {
     incrementOpen = await shouldIncrementOpenCounter(data.pid);
   } catch (err) {
     console.error("Erreur anti-doublon ouverture :", err.message || err);
-    // En cas de doute, on garde le comptage
     incrementOpen = true;
   }
 
@@ -357,6 +367,43 @@ async function trackOpenWithDedup(data) {
   } catch (err) {
     console.error("Erreur compteur ouverture :", err.message || err);
   }
+}
+
+/*******************************************************
+ * ✅ CALCULS DASHBOARD
+ *******************************************************/
+function buildTop20(arr) {
+  const sorted = arr
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 20);
+
+  const out = [];
+  for (let i = 0; i < 20; i++) {
+    out.push(sorted[i] ? sorted[i].label : "");
+  }
+  return out;
+}
+
+function buildTop20Cp(mapObj) {
+  const sorted = Object.entries(mapObj)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20);
+
+  const out = [];
+  for (let i = 0; i < 20; i++) {
+    out.push(sorted[i] ? sorted[i][0] : "");
+  }
+  return out;
+}
+
+function getParamCell(params, rowIndex0, colIndex0) {
+  return params[rowIndex0] && params[rowIndex0][colIndex0]
+    ? params[rowIndex0][colIndex0]
+    : "";
+}
+
+function normalizeDateTimeValue(v) {
+  return asTrimStr(v);
 }
 
 /*******************************************************
@@ -400,7 +447,6 @@ app.get("/open", async (req, res) => {
 
 /*******************************************************
  * ✅ ROUTE OCCASION
- * 1 clic = tracking + compteur + mail + redirection directe
  *******************************************************/
 app.get("/occasion", async (req, res) => {
   const data = {
@@ -433,7 +479,6 @@ app.get("/occasion", async (req, res) => {
 
 /*******************************************************
  * ✅ ROUTE RECONTACT
- * 1 clic = tracking + compteur + mail + page personnalisée
  *******************************************************/
 app.get("/recontact", async (req, res) => {
   const data = {
@@ -553,6 +598,161 @@ app.get("/recontact", async (req, res) => {
       </body>
     </html>
   `);
+});
+
+/*******************************************************
+ * ✅ API DASHBOARD
+ * Page 1 Bizon
+ *******************************************************/
+app.get("/api/dashboard", async (req, res) => {
+  try {
+    const sheets = await getSheetsClient();
+
+    const [prospectsRes, paramsRes, trackingRes] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${PROSPECTS_SHEET_NAME}!A2:S`
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${PARAMS_SHEET_NAME}!A1:M20`
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${TRACKING_SHEET_NAME}!A:H`
+      })
+    ]);
+
+    const prospects = prospectsRes.data.values || [];
+    const params = paramsRes.data.values || [];
+    const tracking = trackingRes.data.values || [];
+
+    /*******************************************************
+     * PARAMÈTRES CAMPAGNE
+     *******************************************************/
+    const paramData = {
+      groupes: getParamCell(params, 2, 12),        // M3
+      filtreCP: getParamCell(params, 4, 0),        // A5
+      campagneId: getParamCell(params, 5, 0),      // A6
+      statut: getParamCell(params, 12, 3),         // D13
+      dernierEnvoi: normalizeDateTimeValue(getParamCell(params, 13, 3)),   // D14
+      nbEnvoye: getParamCell(params, 14, 3),       // D15
+      prochainEnvoi: normalizeDateTimeValue(getParamCell(params, 15, 3))   // D16
+    };
+
+    /*******************************************************
+     * TOP 20
+     *******************************************************/
+    const topOuverturesRaw = [];
+    const topOccasionRaw = [];
+    const topRecontactRaw = [];
+    const cpMap = {};
+
+    prospects.forEach((row) => {
+      const rs = asTrimStr(row[0]);   // A
+      const cp = asTrimStr(row[2]);   // C
+      const open = toInt(row[15]);    // P
+      const occ = toInt(row[16]);     // Q
+      const rec = toInt(row[17]);     // R
+      const score = toInt(row[18]);   // S
+
+      if (rs) {
+        topOuverturesRaw.push({ label: rs, value: open });
+        topOccasionRaw.push({ label: rs, value: occ });
+        topRecontactRaw.push({ label: rs, value: rec });
+      }
+
+      if (cp && score > 0) {
+        cpMap[cp] = (cpMap[cp] || 0) + score;
+      }
+    });
+
+    const topOuvertures = buildTop20(topOuverturesRaw);
+    const topOccasion = buildTop20(topOccasionRaw);
+    const topRecontact = buildTop20(topRecontactRaw);
+    const topCP = buildTop20Cp(cpMap);
+
+    /*******************************************************
+     * TAUX DERNIER ENVOI + MOYENNES
+     * Base actuelle :
+     * - on utilise Tracking
+     * - on groupe par campagne
+     * - on calcule :
+     *   ouverture = nb pid uniques ayant ouvert / nb envoyé du bloc
+     *   clic = nb pid uniques ayant cliqué / nb envoyé du bloc
+     *
+     * Ici, faute d'un onglet runs dédié, on prend :
+     * - nbEnvoye (D15) comme taille du dernier bloc
+     * - la campagne courante (A6) pour filtrer
+     *******************************************************/
+    const currentCampaignId = asTrimStr(paramData.campagneId);
+    const lastSendCount = toInt(paramData.nbEnvoye);
+
+    const trackingRows = tracking.slice(1); // on saute l'entête
+    const campaignRows = trackingRows.filter((row) => {
+      return asTrimStr(row[2]) === currentCampaignId;
+    });
+
+    const openPids = new Set();
+    const clickPids = new Set();
+
+    campaignRows.forEach((row) => {
+      const eventName = asTrimStr(row[1]);
+      const pid = asTrimStr(row[3]);
+
+      if (!pid) return;
+
+      if (eventName === "Ouverture") {
+        openPids.add(pid);
+      }
+
+      if (eventName === "Clic occasion" || eventName === "Clic recontact") {
+        clickPids.add(pid);
+      }
+    });
+
+    const lastOpenRate = lastSendCount > 0 ? openPids.size / lastSendCount : 0;
+    const lastClickRate = lastSendCount > 0 ? clickPids.size / lastSendCount : 0;
+
+    /*******************************************************
+     * MOYENNES
+     * Pour l'instant :
+     * si tu n'as pas encore d'historique par bloc séparé,
+     * on renvoie la même base que la campagne en cours.
+     * On pourra l'affiner après avec un vrai stockage par run.
+     *******************************************************/
+    const averageOpenRate = lastOpenRate;
+    const averageClickRate = lastClickRate;
+
+    /*******************************************************
+     * RÉPONSE FINALE
+     *******************************************************/
+    res.json({
+      success: true,
+      paramData,
+      topOuvertures,
+      topOccasion,
+      topRecontact,
+      topCP,
+      rates: {
+        averageOpenRate,
+        averageClickRate,
+        lastOpenRate,
+        lastClickRate,
+        averageOpenRateLabel: formatPercent(averageOpenRate),
+        averageClickRateLabel: formatPercent(averageClickRate),
+        lastOpenRateLabel: formatPercent(lastOpenRate),
+        lastClickRateLabel: formatPercent(lastClickRate)
+      }
+    });
+
+  } catch (err) {
+    console.error("Erreur /api/dashboard :", err.message || err);
+    res.status(500).json({
+      success: false,
+      error: "Erreur dashboard"
+    });
+  }
 });
 
 /*******************************************************

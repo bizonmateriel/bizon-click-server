@@ -355,3 +355,200 @@ OBJECTIF PROCHAINE FOIS
 - tester ouverture/clic
 - construire dashboard stats
 REPRENDS DIRECT À PARTIR DE CE MÉMO, DU DERNIER APPS SCRIPT COMPLET ET DU DERNIER SERVER.JS PROPRE SANS DOUBLONS.
+🧠 MÉMO SESSION — BIZON MATÉRIEL (DASHBOARD + TRACKING AVANCÉ)
+1) OBJECTIF DE LA SESSION
+
+Mettre en place :
+
+un tracking exploitable
+des compteurs par prospect
+un dashboard lisible et commercial
+une analyse par entreprise + zone (CP)
+2) ÉVOLUTION DU SYSTÈME
+AVANT
+tracking dans Tracking uniquement
+difficile à exploiter rapidement
+MAINTENANT
+
+👉 double système :
+
+🔹 Onglet Tracking
+historique complet
+événements :
+Ouverture
+Clic occasion
+Clic recontact
+
+👉 rôle :
+log brut / historique
+
+🔹 Onglet Prospects
+
+Ajout de 3 colonnes :
+
+P = NB OUVERTURES
+Q = NB CLICS OCCASION
+R = NB CLICS RECONTACT
+
+👉 rôle :
+vue synthétique par prospect
+
+🔹 Ajout colonne activité
+S = SCORE ACTIVITE
+
+Formule :
+
+=SI(A2="";"";P2+Q2+R2)
+
+👉 rôle :
+mesurer l’intérêt réel d’un prospect
+
+3) MODIFICATION SERVER.JS
+
+Ajout :
+
+incrément automatique des compteurs :
+/open → colonne P
+/occasion → colonne Q
+/recontact → colonne R
+ajout anti-doublon ouverture :
+si ouverture < 5 min → pas comptée dans Prospects
+mais toujours loggée dans Tracking
+
+👉 résultat :
+
+tracking propre
+pas de double comptage parasite
+4) DASHBOARD CRÉÉ
+🔥 TOP 20 ENTREPRISES
+Ouvertures
+
+→ basé sur colonne P
+
+Clics occasion
+
+→ basé sur colonne Q
+
+Clics recontact
+
+→ basé sur colonne R
+
+👉 affichage :
+
+uniquement raison sociale
+tri automatique
+top 20 dynamique
+🔥 TOP 20 CODES POSTAUX
+
+Objectif :
+👉 trouver les zones les plus actives
+
+Méthode :
+
+utilisation de la colonne S = SCORE ACTIVITE
+agrégation par code postal
+
+Formule utilisée :
+
+=INDEX(
+QUERY(
+Prospects!C2:S;
+"select Col1, sum(Col17)
+ where Col1 is not null and Col17 > 0
+ group by Col1
+ order by sum(Col17) desc
+ limit 20";
+0
+);
+;1)
+
+👉 résultat :
+
+classement des CP les plus actifs
+suppression des CP à 0
+affichage propre (1 seule colonne)
+5) PROBLÈMES RENCONTRÉS
+erreurs QUERY avec P+Q+R
+erreurs ARRAY_ROW incohérente
+erreurs #REF
+erreurs séparateurs FR (; vs ,)
+difficulté avec les tableaux multi-colonnes
+
+👉 solution :
+
+passer par colonne intermédiaire S
+simplifier les formules
+6) STRUCTURE ACTUELLE VALIDÉE
+Prospects
+données clients
+compteurs
+score activité
+Tracking
+historique complet
+Dashboard
+top entreprises
+top clics
+top recontact
+top zones géographiques
+7) ANALYSE BUSINESS
+
+Le système permet maintenant :
+
+👉 identifier :
+
+prospects chauds
+prospects curieux
+prospects inactifs
+
+👉 analyser :
+
+zones géographiques performantes
+campagnes efficaces
+
+👉 agir :
+
+relance ciblée
+appel prioritaire
+segmentation
+8) POINT TECHNIQUE IMPORTANT
+
+Google Sheets limite :
+
+~1,25 million de lignes pour Tracking
+
+👉 estimation :
+
+20 à 30 ans avant saturation
+
+👉 aucune urgence de migration
+
+9) NOUVELLE PERSPECTIVE
+
+Discussion ouverte :
+
+👉 création d’une application Bizon
+
+Possibilités :
+
+interface web propre
+connexion utilisateur (Google)
+accès personnalisé
+transformation en logiciel
+10) ÉTAT FINAL DE LA SESSION
+
+👉 système stable
+👉 dashboard opérationnel
+👉 tracking propre
+👉 logique métier validée
+
+👉 niveau atteint :
+outil commercial structuré et exploitable
+
+11) PROCHAINE ÉTAPE POSSIBLE
+score prospect chaud
+écran “qui appeler aujourd’hui”
+interface web / application
+🧠 PHRASE DE REPRISE À UTILISER
+
+👉
+“On reprend Bizon dashboard + tracking + score activité”
