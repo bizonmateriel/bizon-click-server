@@ -85,11 +85,6 @@ function toInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function toFloat(v) {
-  const n = parseFloat(asTrimStr(v).replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
-
 function parseIsoDateSafe(v) {
   const s = asTrimStr(v);
   if (!s) return null;
@@ -103,6 +98,14 @@ function formatPercent(value) {
   return `${Math.round(n * 100)}%`;
 }
 
+function displayOrFallback(value, fallback = "—") {
+  const v = asTrimStr(value);
+  return v ? escapeHtml(v) : fallback;
+}
+
+/*******************************************************
+ * ✅ BREVO
+ *******************************************************/
 async function sendAlertEmail({ subject, html, text }) {
   if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY manquante");
   if (!ALERT_EMAIL) throw new Error("ALERT_EMAIL manquante");
@@ -159,19 +162,9 @@ function buildAlertText(title, data) {
   ].join("\n");
 }
 
-function buildTrackingRow(eventName, data) {
-  return [
-    new Date().toISOString(),
-    asTrimStr(eventName),
-    asTrimStr(data.c),
-    asTrimStr(data.pid),
-    asTrimStr(data.rs),
-    asTrimStr(data.cp),
-    asTrimStr(data.ape),
-    asTrimStr(data.g)
-  ];
-}
-
+/*******************************************************
+ * ✅ GOOGLE SHEETS
+ *******************************************************/
 async function getSheetsClient() {
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL) {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_EMAIL manquante");
@@ -189,6 +182,19 @@ async function getSheetsClient() {
 
   await auth.authorize();
   return google.sheets({ version: "v4", auth });
+}
+
+function buildTrackingRow(eventName, data) {
+  return [
+    new Date().toISOString(),
+    asTrimStr(eventName),
+    asTrimStr(data.c),
+    asTrimStr(data.pid),
+    asTrimStr(data.rs),
+    asTrimStr(data.cp),
+    asTrimStr(data.ape),
+    asTrimStr(data.g)
+  ];
 }
 
 async function appendTrackingRow(eventName, data) {
@@ -276,7 +282,7 @@ async function incrementProspectCounter(pid, columnLetter) {
 }
 
 /*******************************************************
- * ✅ DERNIÈRE OUVERTURE POUR ANTI-DOUBLON
+ * ✅ ANTI-DOUBLON OUVERTURE
  *******************************************************/
 async function getLastOpenDateForPid(pid) {
   const cleanPid = asTrimStr(pid);
@@ -370,7 +376,7 @@ async function trackOpenWithDedup(data) {
 }
 
 /*******************************************************
- * ✅ CALCULS DASHBOARD
+ * ✅ DASHBOARD HELPERS
  *******************************************************/
 function buildTop20(arr) {
   const sorted = arr
@@ -406,11 +412,137 @@ function normalizeDateTimeValue(v) {
   return asTrimStr(v);
 }
 
+function renderTopList(items) {
+  return items
+    .map((item, index) => {
+      return `
+        <div class="rank-row">
+          <div class="rank-num">${index + 1}</div>
+          <div class="rank-label">${escapeHtml(item || "")}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function getDashboardData() {
+  const sheets = await getSheetsClient();
+
+  const [prospectsRes, paramsRes, trackingRes] = await Promise.all([
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${PROSPECTS_SHEET_NAME}!A2:S`
+    }),
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${PARAMS_SHEET_NAME}!A1:M20`
+    }),
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${TRACKING_SHEET_NAME}!A:H`
+    })
+  ]);
+
+  const prospects = prospectsRes.data.values || [];
+  const params = paramsRes.data.values || [];
+  const tracking = trackingRes.data.values || [];
+
+  const paramData = {
+    groupes: getParamCell(params, 2, 12),        // M3
+    filtreCP: getParamCell(params, 4, 0),        // A5
+    campagneId: getParamCell(params, 5, 0),      // A6
+    statut: getParamCell(params, 12, 3),         // D13
+    dernierEnvoi: normalizeDateTimeValue(getParamCell(params, 13, 3)), // D14
+    nbEnvoye: getParamCell(params, 14, 3),       // D15
+    prochainEnvoi: normalizeDateTimeValue(getParamCell(params, 15, 3)) // D16
+  };
+
+  const topOuverturesRaw = [];
+  const topOccasionRaw = [];
+  const topRecontactRaw = [];
+  const cpMap = {};
+
+  prospects.forEach((row) => {
+    const rs = asTrimStr(row[0]);   // A
+    const cp = asTrimStr(row[2]);   // C
+    const open = toInt(row[15]);    // P
+    const occ = toInt(row[16]);     // Q
+    const rec = toInt(row[17]);     // R
+    const score = toInt(row[18]);   // S
+
+    if (rs) {
+      topOuverturesRaw.push({ label: rs, value: open });
+      topOccasionRaw.push({ label: rs, value: occ });
+      topRecontactRaw.push({ label: rs, value: rec });
+    }
+
+    if (cp && score > 0) {
+      cpMap[cp] = (cpMap[cp] || 0) + score;
+    }
+  });
+
+  const topOuvertures = buildTop20(topOuverturesRaw);
+  const topOccasion = buildTop20(topOccasionRaw);
+  const topRecontact = buildTop20(topRecontactRaw);
+  const topCP = buildTop20Cp(cpMap);
+
+  const currentCampaignId = asTrimStr(paramData.campagneId);
+  const lastSendCount = toInt(paramData.nbEnvoye);
+
+  const trackingRows = tracking.slice(1);
+  const campaignRows = trackingRows.filter((row) => {
+    return asTrimStr(row[2]) === currentCampaignId;
+  });
+
+  const openPids = new Set();
+  const clickPids = new Set();
+
+  campaignRows.forEach((row) => {
+    const eventName = asTrimStr(row[1]);
+    const pid = asTrimStr(row[3]);
+
+    if (!pid) return;
+
+    if (eventName === "Ouverture") {
+      openPids.add(pid);
+    }
+
+    if (eventName === "Clic occasion" || eventName === "Clic recontact") {
+      clickPids.add(pid);
+    }
+  });
+
+  const lastOpenRate = lastSendCount > 0 ? openPids.size / lastSendCount : 0;
+  const lastClickRate = lastSendCount > 0 ? clickPids.size / lastSendCount : 0;
+
+  // Temporaire : moyenne = dernier taux tant qu'on n'a pas l'historique par bloc
+  const averageOpenRate = lastOpenRate;
+  const averageClickRate = lastClickRate;
+
+  return {
+    paramData,
+    topOuvertures,
+    topOccasion,
+    topRecontact,
+    topCP,
+    rates: {
+      averageOpenRate,
+      averageClickRate,
+      lastOpenRate,
+      lastClickRate,
+      averageOpenRateLabel: formatPercent(averageOpenRate),
+      averageClickRateLabel: formatPercent(averageClickRate),
+      lastOpenRateLabel: formatPercent(lastOpenRate),
+      lastClickRateLabel: formatPercent(lastClickRate)
+    }
+  };
+}
+
 /*******************************************************
- * ✅ ROUTES TECHNIQUES
+ * ✅ ROUTES
  *******************************************************/
 app.get("/", (req, res) => {
-  res.status(200).send("OK - Bizon click server");
+  return res.redirect("/dashboard");
 });
 
 app.get("/ping", (req, res) => {
@@ -525,7 +657,6 @@ app.get("/recontact", async (req, res) => {
             min-height: 100vh;
             padding: 20px;
           }
-
           .box {
             background: #ffffff;
             border: 1px solid #dddddd;
@@ -536,19 +667,16 @@ app.get("/recontact", async (req, res) => {
             text-align: center;
             box-shadow: 0 6px 24px rgba(0,0,0,0.08);
           }
-
           h1 {
             font-size: 28px;
             margin: 0 0 12px 0;
             line-height: 1.3;
           }
-
           .subtitle {
             font-size: 18px;
             margin-bottom: 20px;
             color: #333;
           }
-
           .photo {
             width: 140px;
             height: 140px;
@@ -559,19 +687,16 @@ app.get("/recontact", async (req, res) => {
             border: 4px solid #f0f0f0;
             background: #fff;
           }
-
           .name {
             font-size: 22px;
             font-weight: bold;
             margin-top: 8px;
           }
-
           .role {
             font-size: 16px;
             color: #666;
             margin-top: 4px;
           }
-
           .phone {
             font-size: 24px;
             font-weight: bold;
@@ -583,16 +708,12 @@ app.get("/recontact", async (req, res) => {
       <body>
         <div class="box">
           <h1>Votre demande a bien été prise en compte</h1>
-
           <div class="subtitle">
             Florent vous rappelle dans les plus brefs délais.
           </div>
-
           <img class="photo" src="${escapeHtml(PHOTO_URL)}" alt="Florent Clerc">
-
           <div class="name">Florent Clerc</div>
           <div class="role">Commercial BTP - Secteur 83</div>
-
           <div class="phone">📞 06 71 27 45 75</div>
         </div>
       </body>
@@ -602,156 +723,472 @@ app.get("/recontact", async (req, res) => {
 
 /*******************************************************
  * ✅ API DASHBOARD
- * Page 1 Bizon
  *******************************************************/
 app.get("/api/dashboard", async (req, res) => {
   try {
-    const sheets = await getSheetsClient();
+    const data = await getDashboardData();
 
-    const [prospectsRes, paramsRes, trackingRes] = await Promise.all([
-      sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${PROSPECTS_SHEET_NAME}!A2:S`
-      }),
-      sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${PARAMS_SHEET_NAME}!A1:M20`
-      }),
-      sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${TRACKING_SHEET_NAME}!A:H`
-      })
-    ]);
-
-    const prospects = prospectsRes.data.values || [];
-    const params = paramsRes.data.values || [];
-    const tracking = trackingRes.data.values || [];
-
-    /*******************************************************
-     * PARAMÈTRES CAMPAGNE
-     *******************************************************/
-    const paramData = {
-      groupes: getParamCell(params, 2, 12),        // M3
-      filtreCP: getParamCell(params, 4, 0),        // A5
-      campagneId: getParamCell(params, 5, 0),      // A6
-      statut: getParamCell(params, 12, 3),         // D13
-      dernierEnvoi: normalizeDateTimeValue(getParamCell(params, 13, 3)),   // D14
-      nbEnvoye: getParamCell(params, 14, 3),       // D15
-      prochainEnvoi: normalizeDateTimeValue(getParamCell(params, 15, 3))   // D16
-    };
-
-    /*******************************************************
-     * TOP 20
-     *******************************************************/
-    const topOuverturesRaw = [];
-    const topOccasionRaw = [];
-    const topRecontactRaw = [];
-    const cpMap = {};
-
-    prospects.forEach((row) => {
-      const rs = asTrimStr(row[0]);   // A
-      const cp = asTrimStr(row[2]);   // C
-      const open = toInt(row[15]);    // P
-      const occ = toInt(row[16]);     // Q
-      const rec = toInt(row[17]);     // R
-      const score = toInt(row[18]);   // S
-
-      if (rs) {
-        topOuverturesRaw.push({ label: rs, value: open });
-        topOccasionRaw.push({ label: rs, value: occ });
-        topRecontactRaw.push({ label: rs, value: rec });
-      }
-
-      if (cp && score > 0) {
-        cpMap[cp] = (cpMap[cp] || 0) + score;
-      }
-    });
-
-    const topOuvertures = buildTop20(topOuverturesRaw);
-    const topOccasion = buildTop20(topOccasionRaw);
-    const topRecontact = buildTop20(topRecontactRaw);
-    const topCP = buildTop20Cp(cpMap);
-
-    /*******************************************************
-     * TAUX DERNIER ENVOI + MOYENNES
-     * Base actuelle :
-     * - on utilise Tracking
-     * - on groupe par campagne
-     * - on calcule :
-     *   ouverture = nb pid uniques ayant ouvert / nb envoyé du bloc
-     *   clic = nb pid uniques ayant cliqué / nb envoyé du bloc
-     *
-     * Ici, faute d'un onglet runs dédié, on prend :
-     * - nbEnvoye (D15) comme taille du dernier bloc
-     * - la campagne courante (A6) pour filtrer
-     *******************************************************/
-    const currentCampaignId = asTrimStr(paramData.campagneId);
-    const lastSendCount = toInt(paramData.nbEnvoye);
-
-    const trackingRows = tracking.slice(1); // on saute l'entête
-    const campaignRows = trackingRows.filter((row) => {
-      return asTrimStr(row[2]) === currentCampaignId;
-    });
-
-    const openPids = new Set();
-    const clickPids = new Set();
-
-    campaignRows.forEach((row) => {
-      const eventName = asTrimStr(row[1]);
-      const pid = asTrimStr(row[3]);
-
-      if (!pid) return;
-
-      if (eventName === "Ouverture") {
-        openPids.add(pid);
-      }
-
-      if (eventName === "Clic occasion" || eventName === "Clic recontact") {
-        clickPids.add(pid);
-      }
-    });
-
-    const lastOpenRate = lastSendCount > 0 ? openPids.size / lastSendCount : 0;
-    const lastClickRate = lastSendCount > 0 ? clickPids.size / lastSendCount : 0;
-
-    /*******************************************************
-     * MOYENNES
-     * Pour l'instant :
-     * si tu n'as pas encore d'historique par bloc séparé,
-     * on renvoie la même base que la campagne en cours.
-     * On pourra l'affiner après avec un vrai stockage par run.
-     *******************************************************/
-    const averageOpenRate = lastOpenRate;
-    const averageClickRate = lastClickRate;
-
-    /*******************************************************
-     * RÉPONSE FINALE
-     *******************************************************/
     res.json({
       success: true,
-      paramData,
-      topOuvertures,
-      topOccasion,
-      topRecontact,
-      topCP,
-      rates: {
-        averageOpenRate,
-        averageClickRate,
-        lastOpenRate,
-        lastClickRate,
-        averageOpenRateLabel: formatPercent(averageOpenRate),
-        averageClickRateLabel: formatPercent(averageClickRate),
-        lastOpenRateLabel: formatPercent(lastOpenRate),
-        lastClickRateLabel: formatPercent(lastClickRate)
-      }
+      ...data
     });
-
   } catch (err) {
     console.error("Erreur /api/dashboard :", err.message || err);
     res.status(500).json({
       success: false,
       error: "Erreur dashboard"
     });
+  }
+});
+
+/*******************************************************
+ * ✅ PAGE DASHBOARD VISUELLE
+ *******************************************************/
+app.get("/dashboard", async (req, res) => {
+  try {
+    const data = await getDashboardData();
+    const { paramData, topOuvertures, topOccasion, topRecontact, topCP, rates } = data;
+
+    const statusValue = asTrimStr(paramData.statut).toUpperCase();
+    const statusClass = statusValue === "ACTIF" ? "status-active" : "status-stop";
+
+    res.send(`
+      <!doctype html>
+      <html lang="fr">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Bizon Dashboard</title>
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+
+            body {
+              margin: 0;
+              font-family: Inter, Arial, sans-serif;
+              background:
+                radial-gradient(circle at top left, #2a2f3a 0%, #171a21 35%, #111318 100%);
+              color: #f3f5f7;
+            }
+
+            .page {
+              max-width: 1500px;
+              margin: 0 auto;
+              padding: 28px;
+            }
+
+            .hero {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 20px;
+              margin-bottom: 24px;
+              padding: 26px 28px;
+              border-radius: 24px;
+              background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+              border: 1px solid rgba(255,255,255,0.10);
+              box-shadow: 0 14px 40px rgba(0,0,0,0.22);
+            }
+
+            .hero-left h1 {
+              margin: 0;
+              font-size: 34px;
+              font-weight: 800;
+              letter-spacing: -0.02em;
+            }
+
+            .hero-left p {
+              margin: 8px 0 0 0;
+              color: #bcc4cf;
+              font-size: 15px;
+            }
+
+            .hero-right {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              flex-wrap: wrap;
+            }
+
+            .chip {
+              padding: 10px 14px;
+              border-radius: 999px;
+              font-size: 13px;
+              font-weight: 700;
+              border: 1px solid rgba(255,255,255,0.10);
+              background: rgba(255,255,255,0.06);
+              color: #f3f5f7;
+            }
+
+            .status-active {
+              background: rgba(0,176,80,0.18);
+              color: #70f1a4;
+              border-color: rgba(112,241,164,0.35);
+            }
+
+            .status-stop {
+              background: rgba(255,65,65,0.16);
+              color: #ff9b9b;
+              border-color: rgba(255,155,155,0.35);
+            }
+
+            .kpis {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(260px, 1fr));
+              gap: 20px;
+              margin-bottom: 24px;
+            }
+
+            .kpi-card {
+              position: relative;
+              overflow: hidden;
+              padding: 24px;
+              border-radius: 24px;
+              background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+              border: 1px solid rgba(255,255,255,0.10);
+              box-shadow: 0 14px 34px rgba(0,0,0,0.20);
+            }
+
+            .kpi-card::after {
+              content: "";
+              position: absolute;
+              top: -40px;
+              right: -30px;
+              width: 140px;
+              height: 140px;
+              border-radius: 50%;
+              background: rgba(255,255,255,0.06);
+            }
+
+            .kpi-label {
+              position: relative;
+              z-index: 1;
+              font-size: 13px;
+              text-transform: uppercase;
+              letter-spacing: 0.12em;
+              color: #b8c0cc;
+              margin-bottom: 12px;
+              font-weight: 700;
+            }
+
+            .kpi-value {
+              position: relative;
+              z-index: 1;
+              font-size: 62px;
+              line-height: 1;
+              font-weight: 800;
+              letter-spacing: -0.05em;
+              margin-bottom: 10px;
+            }
+
+            .kpi-sub {
+              position: relative;
+              z-index: 1;
+              font-size: 14px;
+              color: #c8d0da;
+            }
+
+            .tops-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 20px;
+              margin-bottom: 24px;
+            }
+
+            .panel {
+              border-radius: 24px;
+              background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+              border: 1px solid rgba(255,255,255,0.10);
+              box-shadow: 0 14px 34px rgba(0,0,0,0.18);
+              overflow: hidden;
+            }
+
+            .panel-header {
+              padding: 18px 20px;
+              border-bottom: 1px solid rgba(255,255,255,0.08);
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+
+            .panel-title {
+              margin: 0;
+              font-size: 18px;
+              font-weight: 800;
+              color: #ffffff;
+            }
+
+            .panel-badge {
+              font-size: 12px;
+              font-weight: 700;
+              color: #c2cad5;
+              padding: 8px 10px;
+              border-radius: 999px;
+              background: rgba(255,255,255,0.06);
+            }
+
+            .panel-body {
+              padding: 10px 14px 16px 14px;
+            }
+
+            .rank-row {
+              display: grid;
+              grid-template-columns: 42px 1fr;
+              gap: 10px;
+              align-items: center;
+              min-height: 40px;
+              padding: 8px 8px;
+              border-radius: 12px;
+            }
+
+            .rank-row:nth-child(odd) {
+              background: rgba(255,255,255,0.03);
+            }
+
+            .rank-num {
+              width: 30px;
+              height: 30px;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 13px;
+              font-weight: 800;
+              color: #ffffff;
+              background: rgba(255,255,255,0.10);
+            }
+
+            .rank-label {
+              font-size: 14px;
+              color: #ecf1f6;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+
+            .summary-panel {
+              border-radius: 24px;
+              background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.04));
+              border: 1px solid rgba(255,255,255,0.10);
+              box-shadow: 0 14px 34px rgba(0,0,0,0.18);
+              overflow: hidden;
+            }
+
+            .summary-header {
+              padding: 20px 24px;
+              border-bottom: 1px solid rgba(255,255,255,0.08);
+            }
+
+            .summary-header h2 {
+              margin: 0;
+              font-size: 22px;
+              font-weight: 800;
+            }
+
+            .summary-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 16px;
+              padding: 20px;
+            }
+
+            .summary-item {
+              padding: 18px;
+              border-radius: 18px;
+              background: rgba(255,255,255,0.05);
+              border: 1px solid rgba(255,255,255,0.06);
+              min-height: 110px;
+            }
+
+            .summary-label {
+              font-size: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.10em;
+              color: #adb7c4;
+              font-weight: 800;
+              margin-bottom: 10px;
+            }
+
+            .summary-value {
+              font-size: 18px;
+              line-height: 1.45;
+              font-weight: 700;
+              color: #ffffff;
+              word-break: break-word;
+            }
+
+            @media (max-width: 1100px) {
+              .tops-grid,
+              .summary-grid,
+              .kpis {
+                grid-template-columns: 1fr;
+              }
+
+              .hero {
+                flex-direction: column;
+                align-items: flex-start;
+              }
+
+              .kpi-value {
+                font-size: 48px;
+              }
+            }
+
+            @media (max-width: 640px) {
+              .page {
+                padding: 16px;
+              }
+
+              .hero {
+                padding: 20px;
+                border-radius: 20px;
+              }
+
+              .hero-left h1 {
+                font-size: 28px;
+              }
+
+              .panel-header,
+              .summary-header {
+                padding: 16px;
+              }
+
+              .summary-item {
+                min-height: auto;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <section class="hero">
+              <div class="hero-left">
+                <h1>Bizon Dashboard</h1>
+                <p>Pilotage commercial et suivi de campagne</p>
+              </div>
+
+              <div class="hero-right">
+                <div class="chip">Campagne : ${displayOrFallback(paramData.campagneId, "Aucune")}</div>
+                <div class="chip ${statusClass}">Statut : ${displayOrFallback(paramData.statut, "STOP")}</div>
+              </div>
+            </section>
+
+            <section class="kpis">
+              <div class="kpi-card">
+                <div class="kpi-label">Taux d'ouverture moyen</div>
+                <div class="kpi-value">${rates.averageOpenRateLabel}</div>
+                <div class="kpi-sub">Base actuelle de la campagne en cours</div>
+              </div>
+
+              <div class="kpi-card">
+                <div class="kpi-label">Taux de clic moyen</div>
+                <div class="kpi-value">${rates.averageClickRateLabel}</div>
+                <div class="kpi-sub">Clic occasion + clic recontact</div>
+              </div>
+            </section>
+
+            <section class="tops-grid">
+              <div class="panel">
+                <div class="panel-header">
+                  <h2 class="panel-title">Top 20 ouvertures</h2>
+                  <div class="panel-badge">20 lignes</div>
+                </div>
+                <div class="panel-body">
+                  ${renderTopList(topOuvertures)}
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-header">
+                  <h2 class="panel-title">Top 20 clic occasion</h2>
+                  <div class="panel-badge">20 lignes</div>
+                </div>
+                <div class="panel-body">
+                  ${renderTopList(topOccasion)}
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-header">
+                  <h2 class="panel-title">Top 20 clic recontact</h2>
+                  <div class="panel-badge">20 lignes</div>
+                </div>
+                <div class="panel-body">
+                  ${renderTopList(topRecontact)}
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-header">
+                  <h2 class="panel-title">Top 20 codes postaux</h2>
+                  <div class="panel-badge">20 lignes</div>
+                </div>
+                <div class="panel-body">
+                  ${renderTopList(topCP)}
+                </div>
+              </div>
+            </section>
+
+            <section class="summary-panel">
+              <div class="summary-header">
+                <h2>Résumé de la campagne en cours</h2>
+              </div>
+
+              <div class="summary-grid">
+                <div class="summary-item">
+                  <div class="summary-label">Groupes concernés</div>
+                  <div class="summary-value">${displayOrFallback(paramData.groupes)}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Codes postaux concernés</div>
+                  <div class="summary-value">${displayOrFallback(paramData.filtreCP, "Tous")}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Nombre d'envoi journalier</div>
+                  <div class="summary-value">${displayOrFallback(paramData.nbEnvoye, "0")}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">État de la campagne</div>
+                  <div class="summary-value">${displayOrFallback(paramData.statut, "STOP")}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Dernier envoi effectué</div>
+                  <div class="summary-value">${displayOrFallback(paramData.dernierEnvoi)}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Nombre envoyé de la journée</div>
+                  <div class="summary-value">${displayOrFallback(paramData.nbEnvoye, "0")}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Taux d'ouverture du dernier envoi</div>
+                  <div class="summary-value">${rates.lastOpenRateLabel}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Taux de clic du dernier envoi</div>
+                  <div class="summary-value">${rates.lastClickRateLabel}</div>
+                </div>
+
+                <div class="summary-item">
+                  <div class="summary-label">Prochain envoi</div>
+                  <div class="summary-value">${displayOrFallback(paramData.prochainEnvoi, "Non programmé")}</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error("Erreur /dashboard :", err.message || err);
+    res.status(500).send("Erreur dashboard visuel");
   }
 });
 
